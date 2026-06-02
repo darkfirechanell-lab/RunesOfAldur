@@ -102,19 +102,9 @@ public class PoeNinjaClient : IDisposable
 
         if (candidates.Count == 0) { entry = null!; return false; }
 
-        // Use the median-priced entry — avoids outliers like Level 20 gems
-        // which are rare drops and would skew the display value
-        var sorted = candidates
-            .Where(c => c.Entry.ExaltedValue > 0)
-            .OrderBy(c => c.Entry.ExaltedValue)
-            .ToList();
-
-        if (sorted.Count == 0)
-            entry = candidates[0].Entry;
-        else
-            entry = sorted[sorted.Count / 2].Entry; // median
-
-        return true;
+        // No price for levelled items without exact level — show nothing
+        entry = null!;
+        return false;
     }
 
     private async Task RefreshLoop(CancellationToken token)
