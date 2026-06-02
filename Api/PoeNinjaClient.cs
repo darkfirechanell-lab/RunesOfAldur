@@ -98,8 +98,8 @@ public class PoeNinjaClient : IDisposable
 
         if (playerLevel > 0 && candidates.Any(c => c.Level > 0))
         {
-            // Gem level = player level / 2, pick closest available
-            var gemLevel = playerLevel / 2;
+            // Approximate gem level from player level (confirmed: lvl 72 → gem lvl 15)
+            var gemLevel = (int)Math.Round(playerLevel / 5.0);
             var closest = candidates
                 .Where(c => c.Level > 0)
                 .OrderBy(c => Math.Abs(c.Level - gemLevel))
