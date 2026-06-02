@@ -68,10 +68,16 @@ public class PoeNinjaClient : IDisposable
         _fetchTask = FetchAllAsync(league, _cts?.Token ?? CancellationToken.None);
     }
 
-    public bool TryGetPrice(string name, out PriceEntry entry) =>
-        TryGetPrice(name, playerLevel: 0, out entry);
+    public bool TryGetPrice(string name, out PriceEntry entry)
+    {
+        return TryGetPriceInternal(name, out entry);
+    }
 
-    public bool TryGetPrice(string name, int playerLevel, out PriceEntry entry)
+    // keep old overload for compatibility
+    public bool TryGetPrice(string name, int playerLevel, out PriceEntry entry) =>
+        TryGetPriceInternal(name, out entry);
+
+    private bool TryGetPriceInternal(string name, out PriceEntry entry)
     {
         // Exact match first
         if (_cache.TryGetValue(name, out entry!)) return true;
@@ -96,21 +102,17 @@ public class PoeNinjaClient : IDisposable
 
         if (candidates.Count == 0) { entry = null!; return false; }
 
-        if (playerLevel > 0 && candidates.Any(c => c.Level > 0))
-        {
-            // Approximate gem level from player level (confirmed: lvl 72 → gem lvl 15)
-            var gemLevel = (int)Math.Round(playerLevel / 5.0);
-            var closest = candidates
-                .Where(c => c.Level > 0)
-                .OrderBy(c => Math.Abs(c.Level - gemLevel))
-                .First();
-            entry = closest.Entry;
-        }
+        // Use the median-priced entry — avoids outliers like Level 20 gems
+        // which are rare drops and would skew the display value
+        var sorted = candidates
+            .Where(c => c.Entry.ExaltedValue > 0)
+            .OrderBy(c => c.Entry.ExaltedValue)
+            .ToList();
+
+        if (sorted.Count == 0)
+            entry = candidates[0].Entry;
         else
-        {
-            // No player level known — use most valuable
-            entry = candidates.MaxBy(c => c.Entry.ExaltedValue)!.Entry;
-        }
+            entry = sorted[sorted.Count / 2].Entry; // median
 
         return true;
     }
