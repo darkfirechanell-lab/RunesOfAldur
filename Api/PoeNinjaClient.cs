@@ -23,6 +23,7 @@ public class PoeNinjaClient : IDisposable
         ("Runes",      PriceCategory.Rune),
         ("Verisium",   PriceCategory.Verisium),
         ("Expedition", PriceCategory.Expedition),
+        ("UncutGems",  PriceCategory.Other),
     ];
 
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
@@ -69,12 +70,27 @@ public class PoeNinjaClient : IDisposable
 
     public bool TryGetPrice(string name, out PriceEntry entry)
     {
+        // Exact match
         if (_cache.TryGetValue(name, out entry!)) return true;
         foreach (var kv in _cache)
         {
             if (string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase))
             { entry = kv.Value; return true; }
         }
+
+        // Partial match — e.g. "Uncut Spirit Gem" matches "Uncut Spirit Gem (Level 19)"
+        // Return the most valuable entry that starts with the search name
+        PriceEntry? best = null;
+        foreach (var kv in _cache)
+        {
+            if (kv.Key.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+            {
+                if (best == null || kv.Value.ExaltedValue > best.ExaltedValue)
+                    best = kv.Value;
+            }
+        }
+        if (best != null) { entry = best; return true; }
+
         entry = null!;
         return false;
     }
