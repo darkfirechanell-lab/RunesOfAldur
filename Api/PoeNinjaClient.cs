@@ -226,8 +226,8 @@ public class PoeNinjaClient : IDisposable
 
     public void Dispose()
     {
-        _cts?.Cancel();
-        _cts?.Dispose();
-        _http.Dispose();
+        try { _cts?.Cancel(); } catch (ObjectDisposedException) { }
+        try { _cts?.Dispose(); } catch (ObjectDisposedException) { }
+        try { _http.Dispose(); } catch { }
     }
 }
