@@ -93,9 +93,11 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         var scored = rows.Select(r =>
         {
             var rawText = GetRewardText(r);
-            var cleanName = StripQuantity(rawText);
+            var (cleanName, qty) = StripQuantityWithCount(rawText);
             _prices.TryGetPrice(cleanName, playerLevel, out var entry);
-            return (Element: r, Name: cleanName, Value: entry?.ExaltedValue ?? 0, Divine: entry?.DivineValue ?? 0);
+            var unitEx  = entry?.ExaltedValue ?? 0;
+            var unitDiv = entry?.DivineValue  ?? 0;
+            return (Element: r, Name: cleanName, Value: unitEx * qty, Divine: unitDiv * qty);
         }).ToList();
 
         // If prices not loaded yet, show loading indicator on first row
@@ -260,6 +262,14 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             if (RewardTextRegex.IsMatch(t)) return t;
         }
         return own;
+    }
+
+    private static (string Name, int Qty) StripQuantityWithCount(string text)
+    {
+        var match = Regex.Match(text.Trim(), @"^(\d+)x?\s+(.+)$");
+        if (match.Success)
+            return (match.Groups[2].Value.Trim(), int.Parse(match.Groups[1].Value));
+        return (text.Trim(), 1);
     }
 
     private static string StripQuantity(string text)
