@@ -109,12 +109,16 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             return;
         }
 
-        var best = scored.MaxBy(r => r.Value);
+        var bestValue = scored.Max(r => r.Value);
+        // Mark ALL rows that share the highest value (handles ties)
+        var bestRows = bestValue > 0
+            ? scored.Where(r => r.Value == bestValue).ToHashSet()
+            : new HashSet<(ExileCore2.PoEMemory.Element, string, double, double)>();
 
         foreach (var row in scored)
         {
             var rect   = row.Element.GetClientRectCache;
-            var isBest = row == best && row.Value > 0;
+            var isBest = bestRows.Contains(row);
 
             // Borda verde só na melhor linha
             if (isBest)
