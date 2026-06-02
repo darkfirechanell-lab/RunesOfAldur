@@ -89,12 +89,12 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         }
 
         // Score each row against poe.ninja
+        var playerLevel = GameController.Player?.GetComponent<ExileCore2.PoEMemory.Components.Player>()?.Level ?? 0;
         var scored = rows.Select(r =>
         {
-            // Get reward text — may be on a child element if r is the parent row
             var rawText = GetRewardText(r);
             var cleanName = StripQuantity(rawText);
-            _prices.TryGetPrice(cleanName, out var entry);
+            _prices.TryGetPrice(cleanName, playerLevel, out var entry);
             return (Element: r, Name: cleanName, Value: entry?.ExaltedValue ?? 0, Divine: entry?.DivineValue ?? 0);
         }).ToList();
 

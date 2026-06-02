@@ -68,9 +68,12 @@ public class PoeNinjaClient : IDisposable
         _fetchTask = FetchAllAsync(league, _cts?.Token ?? CancellationToken.None);
     }
 
-    public bool TryGetPrice(string name, out PriceEntry entry)
+    public bool TryGetPrice(string name, out PriceEntry entry) =>
+        TryGetPrice(name, playerLevel: 0, out entry);
+
+    public bool TryGetPrice(string name, int playerLevel, out PriceEntry entry)
     {
-        // Exact match
+        // Exact match first
         if (_cache.TryGetValue(name, out entry!)) return true;
         foreach (var kv in _cache)
         {
@@ -78,21 +81,38 @@ public class PoeNinjaClient : IDisposable
             { entry = kv.Value; return true; }
         }
 
-        // Partial match — e.g. "Uncut Spirit Gem" matches "Uncut Spirit Gem (Level 19)"
-        // Return the most valuable entry that starts with the search name
-        PriceEntry? best = null;
+        // Partial match for levelled items e.g. "Uncut Spirit Gem" → "Uncut Spirit Gem (Level 15)"
+        // Collect all entries that start with the base name
+        var candidates = new List<(int Level, PriceEntry Entry)>();
         foreach (var kv in _cache)
         {
-            if (kv.Key.StartsWith(name, StringComparison.OrdinalIgnoreCase))
-            {
-                if (best == null || kv.Value.ExaltedValue > best.ExaltedValue)
-                    best = kv.Value;
-            }
-        }
-        if (best != null) { entry = best; return true; }
+            if (!kv.Key.StartsWith(name, StringComparison.OrdinalIgnoreCase)) continue;
 
-        entry = null!;
-        return false;
+            // Try to extract level from "(Level X)"
+            var match = System.Text.RegularExpressions.Regex.Match(kv.Key, @"\(Level (\d+)\)");
+            var level = match.Success ? int.Parse(match.Groups[1].Value) : 0;
+            candidates.Add((level, kv.Value));
+        }
+
+        if (candidates.Count == 0) { entry = null!; return false; }
+
+        if (playerLevel > 0 && candidates.Any(c => c.Level > 0))
+        {
+            // Gem level = player level / 2, pick closest available
+            var gemLevel = playerLevel / 2;
+            var closest = candidates
+                .Where(c => c.Level > 0)
+                .OrderBy(c => Math.Abs(c.Level - gemLevel))
+                .First();
+            entry = closest.Entry;
+        }
+        else
+        {
+            // No player level known — use most valuable
+            entry = candidates.MaxBy(c => c.Entry.ExaltedValue)!.Entry;
+        }
+
+        return true;
     }
 
     private async Task RefreshLoop(CancellationToken token)
