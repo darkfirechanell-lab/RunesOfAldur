@@ -221,8 +221,28 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
     {
         var rows = new List<ExileCore2.PoEMemory.Element>();
         FindRewardElements(panel, rows, 0);
-        // Deduplicate by address, keep order
-        return rows.DistinctBy(e => e.Address).ToList();
+        rows = rows.DistinctBy(e => e.Address).ToList();
+
+        // Find Y position of "Bonus Reward" label and exclude rows below it
+        var bonusY = FindBonusRewardY(panel, 0);
+        if (bonusY > 0)
+            rows = rows.Where(r => r.GetClientRectCache.Y < bonusY).ToList();
+
+        return rows;
+    }
+
+    private static float FindBonusRewardY(ExileCore2.PoEMemory.Element el, int depth)
+    {
+        if (depth > 8) return 0;
+        var text = el.Text?.Trim() ?? "";
+        if (text.Equals("Bonus Reward", System.StringComparison.OrdinalIgnoreCase))
+            return el.GetClientRectCache.Y;
+        foreach (var child in el.Children)
+        {
+            var y = FindBonusRewardY(child, depth + 1);
+            if (y > 0) return y;
+        }
+        return 0;
     }
 
     private static void FindRewardElements(ExileCore2.PoEMemory.Element el, List<ExileCore2.PoEMemory.Element> result, int depth)
