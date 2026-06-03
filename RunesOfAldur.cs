@@ -49,7 +49,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
         var panel = GetAltarPanel();
 
-        // Always show status so we know Render() is running
         if (Settings.DebugLog)
         {
             var ui = GameController.Game.IngameState.IngameUi;
@@ -62,7 +61,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             L($"  FullscreenPanels total={ui.FullscreenPanels.Count} visible={ui.FullscreenPanels.Count(p => p.IsVisible)}", Color.Cyan);
             L($"  IngameUi children={ui.Children.Count} visible={ui.Children.Count(c => c.IsVisible)}", Color.Cyan);
 
-            // Show first few visible children of IngameUi for diagnosis
             var visChildren = ui.Children.Where(c => c.IsVisible).Take(5).ToList();
             foreach (var c in visChildren)
             {
@@ -79,7 +77,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
         if (panel == null || !panel.IsVisible) return;
 
-        // Collect all visible reward rows: element + clean name
         var rows = CollectRewardRows(panel);
 
         if (rows.Count == 0)
@@ -88,7 +85,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             return;
         }
 
-        // Score each row against poe.ninja
         var playerLevel = GameController.Player?.GetComponent<ExileCore2.PoEMemory.Components.Player>()?.Level ?? 0;
         var scored = rows.Select(r =>
         {
@@ -100,7 +96,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             return (Element: r, Name: cleanName, Value: unitEx * qty, Divine: unitDiv * qty);
         }).ToList();
 
-        // If prices not loaded yet, show loading indicator on first row
         if (_prices.Prices.Count == 0)
         {
             if (rows.Count > 0)
@@ -112,7 +107,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         }
 
         var bestValue = scored.Max(r => r.Value);
-        // Mark ALL rows that share the highest value (handles ties)
         var bestRows = bestValue > 0
             ? scored.Where(r => r.Value == bestValue).ToHashSet()
             : new HashSet<(ExileCore2.PoEMemory.Element, string, double, double)>();
@@ -122,11 +116,9 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             var rect   = row.Element.GetClientRectCache;
             var isBest = bestRows.Contains(row);
 
-            // Borda verde só na melhor linha
             if (isBest)
                 Graphics.DrawFrame(rect, BestBorderColor, Settings.BestBorderThickness);
 
-            // Preço — desenhado dentro da linha, alinhado à direita
             string priceStr;
             if (row.Value <= 0)
                 priceStr = "?";
@@ -135,7 +127,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             else
                 priceStr = $"{row.Value:F1} Ex";
 
-            // Preço só aparece se ShowPriceOnAll estiver activo (ou se for a melhor linha)
             if (!Settings.ShowPriceOnAll.Value && !isBest) continue;
 
             var drawList = ImGuiNET.ImGui.GetBackgroundDrawList();
@@ -147,7 +138,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
             uint col = (uint)(PriceTextColor.A << 24 | PriceTextColor.B << 16 | PriceTextColor.G << 8 | PriceTextColor.R);
 
-            // Desenhar 3x com pequeno offset para simular bold
             var offsets = new System.Numerics.Vector2[]
             {
                 new(0, 0), new(1, 0), new(0, 1)
@@ -164,20 +154,13 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
         if (Settings.DebugLog)
             DrawDebug(scored, panel);
-        else if (rows.Count == 0 && Settings.DebugLog)
-            DrawDebug([], panel);
     }
-
-    // ── Altar panel ──────────────────────────────────────────────────────────
 
     private ExileCore2.PoEMemory.Element? GetAltarPanel()
     {
         var ui = GameController.Game.IngameState.IngameUi;
         var screenW = GameController.Window.GetWindowRectangle().Width;
         var screenH = GameController.Window.GetWindowRectangle().Height;
-
-        // Walk the full IngameUi tree recursively looking for the altar panel.
-        // The altar is ~430x420, sits on the left side, and contains "1x ..." reward text.
         return FindAltarInTree(ui, screenW, screenH, 0);
     }
 
@@ -188,7 +171,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
         var rect = el.GetClientRectCache;
 
-        // Altar is roughly 300-600px wide and 300-700px tall, left side of screen
         bool sizeOk   = rect.Width  is > 200 and < 700
                      && rect.Height is > 200 and < 800;
         bool leftSide = rect.X < screenW * 0.4f;
@@ -215,31 +197,46 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         return false;
     }
 
-    // ── Collect reward row elements ───────────────────────────────────────────
-
     private static List<ExileCore2.PoEMemory.Element> CollectRewardRows(ExileCore2.PoEMemory.Element panel)
     {
         var rows = new List<ExileCore2.PoEMemory.Element>();
         FindRewardElements(panel, rows, 0);
-        // Deduplicate by address, keep order
-        return rows.DistinctBy(e => e.Address).ToList();
+        rows = rows.DistinctBy(e => e.Address).ToList();
+
+        var bonusY = FindBonusRewardY(panel, 0);
+        if (bonusY > 0)
+            rows = rows.Where(r => r.GetClientRectCache.Y < bonusY).ToList();
+
+        return rows;
+    }
+
+    private static float FindBonusRewardY(ExileCore2.PoEMemory.Element el, int depth)
+    {
+        if (depth > 8) return 0;
+        var text = el.Text?.Trim() ?? "";
+        if (text.Equals("Bonus Reward", System.StringComparison.OrdinalIgnoreCase))
+            return el.GetClientRectCache.Y;
+        foreach (var child in el.Children)
+        {
+            var y = FindBonusRewardY(child, depth + 1);
+            if (y > 0) return y;
+        }
+        return 0;
     }
 
     private static void FindRewardElements(ExileCore2.PoEMemory.Element el, List<ExileCore2.PoEMemory.Element> result, int depth)
     {
         if (depth > 10 || !el.IsVisible) return;
 
-        // If any direct child has reward text, this element IS the row — add it and stop descending
         foreach (var child in el.Children)
         {
             if (RewardTextRegex.IsMatch(child.Text?.Trim() ?? ""))
             {
                 result.Add(el);
-                return; // don't recurse further — row found
+                return;
             }
         }
 
-        // Own text fallback (no children with reward text)
         if (RewardTextRegex.IsMatch(el.Text?.Trim() ?? ""))
         {
             result.Add(el);
@@ -252,10 +249,8 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
     private static string GetRewardText(ExileCore2.PoEMemory.Element el)
     {
-        // Try own text first
         var own = el.Text?.Trim() ?? "";
         if (RewardTextRegex.IsMatch(own)) return own;
-        // Then children
         foreach (var child in el.Children)
         {
             var t = child.Text?.Trim() ?? "";
@@ -274,13 +269,9 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
     private static string StripQuantity(string text)
     {
-        // "1x Greater Iron Rune" → "Greater Iron Rune"
-        // "2x Exalted Orb" → "Exalted Orb"
         var match = Regex.Match(text, @"^\d+x?\s+(.+)$");
         return match.Success ? match.Groups[1].Value.Trim() : text.Trim();
     }
-
-    // ── Debug ─────────────────────────────────────────────────────────────────
 
     private void DrawDebug(
         List<(ExileCore2.PoEMemory.Element Element, string Name, double Value, double Divine)> rows,
@@ -294,7 +285,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         foreach (var r in rows)
             Line($"  '{r.Name}'  {r.Value:F1}Ex  rect={r.Element.GetClientRectCache.X:F0},{r.Element.GetClientRectCache.Y:F0}", Color.White);
 
-        // Also show all texts in panel for diagnosis
         var allTexts = new List<string>();
         CollectAllTexts(panel, allTexts, 0);
         y += 5f;
@@ -323,7 +313,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             _prices.Start(GameController.IngameState.Data.ServerData.League);
         }
 
-        // Mostrar slider de posição só quando ShowPriceOnAll está activo
         if (Settings.ShowPriceOnAll.Value)
         {
             ImGuiNET.ImGui.Spacing();
