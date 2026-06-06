@@ -26,7 +26,10 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
     // memória + regex em cada elemento. Em vez de a refazer a cada frame, fazemo-la no máximo a cada
     // RescanInterval e reaproveitamos os Elements em cache para desenhar (os rects atualizam-se
     // sozinhos via GetClientRectCache, por isso o overlay continua alinhado todos os frames).
-    private static readonly TimeSpan RescanInterval = TimeSpan.FromMilliseconds(250);
+    // PERF: era 250ms — a travessia da árvore de UI (FindAltarInTree × ContainsRewardText, com regex)
+    // custa ~12ms num pico e corria 4x/s, causando stutter ("para e volta"). 1000ms reduz o pico a 1x/s.
+    // O altar é estático enquanto aberto, por isso 1s de refresh é mais que suficiente.
+    private static readonly TimeSpan RescanInterval = TimeSpan.FromMilliseconds(1000);
     private readonly Stopwatch _scanTimer = Stopwatch.StartNew();
     private TimeSpan _nextScan = TimeSpan.Zero;
     private List<(ExileCore2.PoEMemory.Element Element, string Name, double Value, double Divine)> _scoredCache = [];
@@ -195,7 +198,18 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
         // A stash (e outros painéis grandes à esquerda) sobrepõem-se ao sítio do altar e teriam de
         // ser filtrados na travessia; mais barato é simplesmente não procurar com a stash aberta.
-        if (gc.Game.IngameState.IngameUi.StashElement.IsVisibleLocal) return false;
+        var ui = gc.Game.IngameState.IngameUi;
+        if (ui.StashElement.IsVisibleLocal) return false;
+
+        // PERF (gate caro evitado): o altar aparece DENTRO de um painel grande/esquerdo. Sem nenhum
+        // painel desses visível NÃO há altar — logo nem vale a pena a travessia cara (regex na árvore de
+        // UI). Antes, isto corria a cada Rescan em TODO o mapa durante o combate (causa do stutter de
+        // 12ms). Agora a travessia só corre quando há painel aberto onde o altar PODE estar.
+        var hasPanelOpen =
+            ui.OpenLeftPanel.IsVisible
+            || (ui.LargePanels != null && ui.LargePanels.Any(p => p != null && p.IsVisible))
+            || (ui.FullscreenPanels != null && ui.FullscreenPanels.Any(p => p != null && p.IsVisible));
+        if (!hasPanelOpen) return false;
 
         return true;
     }
