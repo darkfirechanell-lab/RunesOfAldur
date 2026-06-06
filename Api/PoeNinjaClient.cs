@@ -54,32 +54,25 @@ public class PoeNinjaClient : IDisposable
     public void Start(string league)
     {
         _cts = new CancellationTokenSource();
-        // Fetch immediately on start
         _fetchTask = FetchAllAsync(league, _cts.Token);
     }
 
-    /// <summary>Call from Tick() with the current league name from the game server.</summary>
     public void TryRefreshIfStale(string league)
     {
         var leagueChanged = !string.Equals(league, _lastLeague, StringComparison.OrdinalIgnoreCase);
         if (!IsStale && !leagueChanged) return;
         if (_fetchTask is { IsCompleted: false }) return;
-
         _fetchTask = FetchAllAsync(league, _cts?.Token ?? CancellationToken.None);
     }
 
-    public bool TryGetPrice(string name, out PriceEntry entry)
-    {
-        return TryGetPriceInternal(name, out entry);
-    }
+    public bool TryGetPrice(string name, out PriceEntry entry) =>
+        TryGetPriceInternal(name, out entry);
 
-    // keep old overload for compatibility
     public bool TryGetPrice(string name, int playerLevel, out PriceEntry entry) =>
         TryGetPriceInternal(name, out entry);
 
     private bool TryGetPriceInternal(string name, out PriceEntry entry)
     {
-        // Exact match first
         if (_cache.TryGetValue(name, out entry!)) return true;
         foreach (var kv in _cache)
         {
@@ -87,34 +80,9 @@ public class PoeNinjaClient : IDisposable
             { entry = kv.Value; return true; }
         }
 
-        // Partial match for levelled items e.g. "Uncut Spirit Gem" → "Uncut Spirit Gem (Level 15)"
-        // Collect all entries that start with the base name
-        var candidates = new List<(int Level, PriceEntry Entry)>();
-        foreach (var kv in _cache)
-        {
-            if (!kv.Key.StartsWith(name, StringComparison.OrdinalIgnoreCase)) continue;
-
-            // Try to extract level from "(Level X)"
-            var match = System.Text.RegularExpressions.Regex.Match(kv.Key, @"\(Level (\d+)\)");
-            var level = match.Success ? int.Parse(match.Groups[1].Value) : 0;
-            candidates.Add((level, kv.Value));
-        }
-
-        if (candidates.Count == 0) { entry = null!; return false; }
-
-        // No price for levelled items without exact level — show nothing
+        // No price for levelled items (e.g. gems) without exact level match
         entry = null!;
         return false;
-    }
-
-    private async Task RefreshLoop(CancellationToken token)
-    {
-        // Initial fetch will happen via TryRefreshIfStale from Tick()
-        while (!token.IsCancellationRequested)
-        {
-            try { await Task.Delay(CacheDuration, token).ConfigureAwait(false); }
-            catch (TaskCanceledException) { break; }
-        }
     }
 
     private async Task FetchAllAsync(string league, CancellationToken token)
@@ -136,11 +104,9 @@ public class PoeNinjaClient : IDisposable
             var newCache = new Dictionary<string, PriceEntry>(512, StringComparer.OrdinalIgnoreCase);
             double divineInEx = 78.0;
 
-            // First pass — get divine rate from Currency
             foreach (var t in tasks.Where(t => t.Cat.Cat == PriceCategory.Currency))
                 divineInEx = ExtractDivineRate(t.Task.Result, divineInEx);
 
-            // Second pass — build all entries
             foreach (var t in tasks)
                 ParseCategory(t.Task.Result, t.Cat.Cat, divineInEx, newCache);
 
@@ -168,7 +134,6 @@ public class PoeNinjaClient : IDisposable
             if (primary == "divine")
                 return (double?)rates?["exalted"] ?? fallback;
 
-            // primary = exalted — find divine line
             var idToName = BuildIdToName(root);
             foreach (var line in root["lines"] as JArray ?? [])
             {
@@ -197,7 +162,6 @@ public class PoeNinjaClient : IDisposable
 
             var pv = (double?)line["primaryValue"] ?? 0;
 
-            // Normalise to Exalted
             double exVal  = primary == "divine" ? pv * divineInEx : pv;
             double divVal = divineInEx > 0 ? exVal / divineInEx : 0;
 
