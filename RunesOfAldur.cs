@@ -37,11 +37,19 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
     public RunesOfAldur() { Name = "Runes of Aldur"; }
 
+    // PerfWatchdog bridge: tempo do último Tick/Render em microsegundos. O PerfWatchdog lê via
+    // PluginBridge ("RunesOfAldur.GetTickUs"/"GetRenderUs") para medir o custo deste plugin por frame.
+    private long _lastTickUs;
+    private long _lastRenderUs;
+
     public override bool Initialise()
     {
         _prices = new PoeNinjaClient(msg => LogMessage(msg, 5));
         var league = GameController.IngameState.Data.ServerData.League;
         _prices.Start(league);
+
+        GameController.PluginBridge.SaveMethod("RunesOfAldur.GetTickUs", (Func<long>)(() => _lastTickUs));
+        GameController.PluginBridge.SaveMethod("RunesOfAldur.GetRenderUs", (Func<long>)(() => _lastRenderUs));
         return true;
     }
 
@@ -50,13 +58,21 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
     public override void Tick()
     {
+        var _sw = Stopwatch.StartNew();
+        try
+        {
         if (!Settings.Enable) return;
         var league = GameController.IngameState.Data.ServerData.League;
         _prices.TryRefreshIfStale(league);
+        }
+        finally { _lastTickUs = _sw.ElapsedTicks * 1_000_000 / Stopwatch.Frequency; }
     }
 
     public override void Render()
     {
+        var _sw = Stopwatch.StartNew();
+        try
+        {
         if (!Settings.Enable) return;
 
         // Gate barato: enquanto não há altar possível à vista não fazemos travessia nenhuma.
@@ -165,6 +181,8 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
         if (Settings.DebugLog)
             DrawDebug(scored, panel);
+        }
+        finally { _lastRenderUs = _sw.ElapsedTicks * 1_000_000 / Stopwatch.Frequency; }
     }
 
     // Pré-condições baratas para valer a pena procurar o altar. Tudo leituras simples — sem regex,
