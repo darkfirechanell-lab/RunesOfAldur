@@ -28,7 +28,7 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
     // sozinhos via GetClientRectCache, por isso o overlay continua alinhado todos os frames).
     private static readonly TimeSpan RescanInterval = TimeSpan.FromMilliseconds(250);
     private readonly Stopwatch _scanTimer = Stopwatch.StartNew();
-    private TimeSpan _lastScan = TimeSpan.MinValue;
+    private TimeSpan _nextScan = TimeSpan.Zero;
     private List<(ExileCore2.PoEMemory.Element Element, string Name, double Value, double Divine)> _scoredCache = [];
     private ExileCore2.PoEMemory.Element? _panelCache;
 
@@ -65,9 +65,11 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         if (!CanScan()) { _panelCache = null; _scoredCache = []; return; }
 
         // Só refazemos a travessia cara periodicamente; entre scans desenhamos a partir do cache.
-        if (_scanTimer.Elapsed - _lastScan >= RescanInterval)
+        // (Comparamos Elapsed com o próximo instante agendado em vez de subtrair TimeSpans, que
+        // podia transbordar quando _nextScan ainda estava no valor inicial.)
+        if (_scanTimer.Elapsed >= _nextScan)
         {
-            _lastScan = _scanTimer.Elapsed;
+            _nextScan = _scanTimer.Elapsed + RescanInterval;
             Rescan();
         }
 
