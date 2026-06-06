@@ -201,15 +201,11 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         var ui = gc.Game.IngameState.IngameUi;
         if (ui.StashElement.IsVisibleLocal) return false;
 
-        // PERF (gate caro evitado): o altar aparece DENTRO de um painel grande/esquerdo. Sem nenhum
-        // painel desses visível NÃO há altar — logo nem vale a pena a travessia cara (regex na árvore de
-        // UI). Antes, isto corria a cada Rescan em TODO o mapa durante o combate (causa do stutter de
-        // 12ms). Agora a travessia só corre quando há painel aberto onde o altar PODE estar.
-        var hasPanelOpen =
-            ui.OpenLeftPanel.IsVisible
-            || (ui.LargePanels != null && ui.LargePanels.Any(p => p != null && p.IsVisible))
-            || (ui.FullscreenPanels != null && ui.FullscreenPanels.Any(p => p != null && p.IsVisible));
-        if (!hasPanelOpen) return false;
+        // NOTA: NÃO se filtra por tipo de painel aqui. Uma tentativa de exigir OpenLeftPanel/LargePanels/
+        // FullscreenPanels BLOQUEAVA o altar de Runeshape Combinations (que não cai nesses contentores) —
+        // os preços deixavam de aparecer. O ganho de performance vem do RescanInterval (1s em vez de
+        // 250ms), que já corta o pico a 1x/s. Se for preciso mais, identificar PRIMEIRO o contentor real
+        // do altar (medindo) antes de voltar a apertar este gate.
 
         return true;
     }
