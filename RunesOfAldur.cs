@@ -36,7 +36,9 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
     private ExileCore2.PoEMemory.Element? _panelCache;
 
     private static readonly Color BestBorderColor = Color.FromArgb(255, 0, 255, 80);   // verde — borda melhor
-    private static readonly Color PriceTextColor  = Color.FromArgb(255, 0, 0, 0);      // preto — todos os preços
+    // Estilo NinjaPricer: texto branco sobre caixa escura semi-transparente.
+    private static readonly Color PriceTextColor = Color.FromArgb(255, 255, 255, 255); // branco — todos os preços
+    private static readonly Color PriceBgColor   = Color.FromArgb(190, 0, 0, 0);       // fundo escuro ~75% alpha
 
     public RunesOfAldur() { Name = "Runes of Aldur"; }
 
@@ -161,25 +163,31 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
             var drawList = ImGuiNET.ImGui.GetBackgroundDrawList();
             const float scale = 1.4f;
-            var lineH = ImGuiNET.ImGui.GetTextLineHeight() * scale;
-            var textPos = new System.Numerics.Vector2(
-                rect.X + rect.Width * (Settings.PriceXPercent / 100f),
-                rect.Y + (rect.Height - lineH) / 2f);
+            const float padX = 4f;   // margem horizontal do fundo à volta do texto
+            const float padY = 2f;   // margem vertical
 
-            uint col = (uint)(PriceTextColor.A << 24 | PriceTextColor.B << 16 | PriceTextColor.G << 8 | PriceTextColor.R);
+            // Posição base = centro da row. Os sliders somam um offset em % do ECRÃ todo, onde 50% = neutro
+            // (preço fica na row). 0% empurra meio ecrã p/ esquerda/cima, 100% meio ecrã p/ direita/baixo.
+            // Como o offset é igual para todas as rows, o bloco inteiro move junto e o espaçamento mantém-se.
+            var win     = GameController.Window.GetWindowRectangle();
+            var offsetX = win.Width  * ((Settings.PriceXPercent / 100f) - 0.5f);
+            var offsetY = win.Height * ((Settings.PriceYPercent / 100f) - 0.5f);
+            var centerX = rect.X + rect.Width  / 2f + offsetX;
+            var centerY = rect.Y + rect.Height / 2f + offsetY;
 
-            var offsets = new System.Numerics.Vector2[]
-            {
-                new(0, 0), new(1, 0), new(0, 1)
-            };
+            uint textCol = (uint)(PriceTextColor.A << 24 | PriceTextColor.B << 16 | PriceTextColor.G << 8 | PriceTextColor.R);
+            uint bgCol   = (uint)(PriceBgColor.A   << 24 | PriceBgColor.B   << 16 | PriceBgColor.G   << 8 | PriceBgColor.R);
 
             var font = ImGuiNET.ImGui.GetFont();
-            foreach (var off in offsets)
-            {
-                var textSize = font.CalcTextSizeA(font.FontSize * scale, float.MaxValue, 0, priceStr);
-                var pos = new System.Numerics.Vector2(textPos.X - textSize.X / 2f + off.X, textPos.Y + off.Y);
-                drawList.AddText(font, font.FontSize * scale, pos, col, priceStr);
-            }
+            var textSize = font.CalcTextSizeA(font.FontSize * scale, float.MaxValue, 0, priceStr);
+
+            // Centra o bloco (caixa + texto) no ponto (centerX, centerY), estilo NinjaPricer.
+            var textPos = new System.Numerics.Vector2(centerX - textSize.X / 2f, centerY - textSize.Y / 2f);
+            var bgMin   = new System.Numerics.Vector2(textPos.X - padX, textPos.Y - padY);
+            var bgMax   = new System.Numerics.Vector2(textPos.X + textSize.X + padX, textPos.Y + textSize.Y + padY);
+
+            drawList.AddRectFilled(bgMin, bgMax, bgCol);
+            drawList.AddText(font, font.FontSize * scale, textPos, textCol, priceStr);
         }
 
         if (Settings.DebugLog)
@@ -407,6 +415,9 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             var xPct = Settings.PriceXPercent.Value;
             if (ImGuiNET.ImGui.SliderFloat("Price X position (%)", ref xPct, 0f, 100f))
                 Settings.PriceXPercent.Value = xPct;
+            var yPct = Settings.PriceYPercent.Value;
+            if (ImGuiNET.ImGui.SliderFloat("Price Y position (%)", ref yPct, 0f, 100f))
+                Settings.PriceYPercent.Value = yPct;
         }
     }
 }
