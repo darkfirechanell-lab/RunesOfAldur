@@ -15,35 +15,24 @@ namespace RunesOfAldur;
 
 public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 {
-    // Matches "1x Greater Iron Rune", "2x Exalted Orb", etc.
     private static readonly Regex RewardTextRegex = new(
         @"^\d+x?\s+.{3,}$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private PoeNinjaClient _prices = null!;
 
-    // A travessia da árvore de UI (encontrar o painel + apanhar os rows) é cara: faz leituras de
-    // memória + regex em cada elemento. Em vez de a refazer a cada frame, fazemo-la no máximo a cada
-    // RescanInterval e reaproveitamos os Elements em cache para desenhar (os rects atualizam-se
-    // sozinhos via GetClientRectCache, por isso o overlay continua alinhado todos os frames).
-    // PERF: era 250ms — a travessia da árvore de UI (FindAltarInTree × ContainsRewardText, com regex)
-    // custa ~12ms num pico e corria 4x/s, causando stutter ("para e volta"). 1000ms reduz o pico a 1x/s.
-    // O altar é estático enquanto aberto, por isso 1s de refresh é mais que suficiente.
     private static readonly TimeSpan RescanInterval = TimeSpan.FromMilliseconds(1000);
     private readonly Stopwatch _scanTimer = Stopwatch.StartNew();
     private TimeSpan _nextScan = TimeSpan.Zero;
     private List<(ExileCore2.PoEMemory.Element Element, string Name, double Value, double Divine)> _scoredCache = [];
     private ExileCore2.PoEMemory.Element? _panelCache;
 
-    private static readonly Color BestBorderColor = Color.FromArgb(255, 0, 255, 80);   // verde — borda melhor
-    // Estilo NinjaPricer: texto branco sobre caixa escura semi-transparente.
-    private static readonly Color PriceTextColor = Color.FromArgb(255, 255, 255, 255); // branco — todos os preços
-    private static readonly Color PriceBgColor   = Color.FromArgb(190, 0, 0, 0);       // fundo escuro ~75% alpha
+    private static readonly Color BestBorderColor = Color.FromArgb(255, 0, 255, 80);
+    private static readonly Color PriceTextColor = Color.FromArgb(255, 255, 255, 255);
+    private static readonly Color PriceBgColor   = Color.FromArgb(190, 0, 0, 0);
 
     public RunesOfAldur() { Name = "Runes of Aldur"; }
 
-    // PerfWatchdog bridge: tempo do último Tick/Render em microsegundos. O PerfWatchdog lê via
-    // PluginBridge ("RunesOfAldur.GetTickUs"/"GetRenderUs") para medir o custo deste plugin por frame.
     private long _lastTickUs;
     private long _lastRenderUs;
 
@@ -80,14 +69,8 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         {
         if (!Settings.Enable) return;
 
-        // Gate barato: enquanto não há altar possível à vista não fazemos travessia nenhuma.
-        // Estes checks são leituras simples (sem regex, sem descer a árvore) e cortam o custo a
-        // zero na cidade, em loading, ou com a stash aberta (que tapa o sítio do altar).
         if (!CanScan()) { _panelCache = null; _scoredCache = []; return; }
 
-        // Só refazemos a travessia cara periodicamente; entre scans desenhamos a partir do cache.
-        // (Comparamos Elapsed com o próximo instante agendado em vez de subtrair TimeSpans, que
-        // podia transbordar quando _nextScan ainda estava no valor inicial.)
         if (_scanTimer.Elapsed >= _nextScan)
         {
             _nextScan = _scanTimer.Elapsed + RescanInterval;
@@ -163,12 +146,9 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
             var drawList = ImGuiNET.ImGui.GetBackgroundDrawList();
             const float scale = 1.4f;
-            const float padX = 4f;   // margem horizontal do fundo à volta do texto
-            const float padY = 2f;   // margem vertical
+            const float padX = 4f;
+            const float padY = 2f;
 
-            // Posição base = centro da row. Os sliders somam um offset em % do ECRÃ todo, onde 50% = neutro
-            // (preço fica na row). 0% empurra meio ecrã p/ esquerda/cima, 100% meio ecrã p/ direita/baixo.
-            // Como o offset é igual para todas as rows, o bloco inteiro move junto e o espaçamento mantém-se.
             var win     = GameController.Window.GetWindowRectangle();
             var offsetX = win.Width  * ((Settings.PriceXPercent / 100f) - 0.5f);
             var offsetY = win.Height * ((Settings.PriceYPercent / 100f) - 0.5f);
@@ -181,7 +161,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             var font = ImGuiNET.ImGui.GetFont();
             var textSize = font.CalcTextSizeA(font.FontSize * scale, float.MaxValue, 0, priceStr);
 
-            // Centra o bloco (caixa + texto) no ponto (centerX, centerY), estilo NinjaPricer.
             var textPos = new System.Numerics.Vector2(centerX - textSize.X / 2f, centerY - textSize.Y / 2f);
             var bgMin   = new System.Numerics.Vector2(textPos.X - padX, textPos.Y - padY);
             var bgMax   = new System.Numerics.Vector2(textPos.X + textSize.X + padX, textPos.Y + textSize.Y + padY);
@@ -196,29 +175,18 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         finally { _lastRenderUs = _sw.ElapsedTicks * 1_000_000 / Stopwatch.Frequency; }
     }
 
-    // Pré-condições baratas para valer a pena procurar o altar. Tudo leituras simples — sem regex,
-    // sem descer a árvore de UI. Quando isto devolve false não há sequer travessia.
     private bool CanScan()
     {
         var gc = GameController;
         if (gc is null || !gc.InGame || gc.IsLoading) return false;
         if (gc.Area?.CurrentArea is { IsTown: true } or { IsHideout: true }) return false;
 
-        // A stash (e outros painéis grandes à esquerda) sobrepõem-se ao sítio do altar e teriam de
-        // ser filtrados na travessia; mais barato é simplesmente não procurar com a stash aberta.
         var ui = gc.Game.IngameState.IngameUi;
         if (ui.StashElement.IsVisibleLocal) return false;
-
-        // NOTA: NÃO se filtra por tipo de painel aqui. Uma tentativa de exigir OpenLeftPanel/LargePanels/
-        // FullscreenPanels BLOQUEAVA o altar de Runeshape Combinations (que não cai nesses contentores) —
-        // os preços deixavam de aparecer. O ganho de performance vem do RescanInterval (1s em vez de
-        // 250ms), que já corta o pico a 1x/s. Se for preciso mais, identificar PRIMEIRO o contentor real
-        // do altar (medindo) antes de voltar a apertar este gate.
 
         return true;
     }
 
-    // Travessia cara (memória + regex) feita no máximo a cada RescanInterval, não por frame.
     private void Rescan()
     {
         var panel = GetAltarPanel();
@@ -264,10 +232,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
         var rect = el.GetClientRectCache;
 
-        // Limites em FRAÇÃO do ecrã, não pixels absolutos: PoE2 escala a UI com a resolução,
-        // por isso um altar de ~400x600 a 1080p vira ~800x1200 a 4K. Limites fixos em px
-        // (< 700 / < 800) faziam o painel falhar a 4K e o plugin nunca o encontrava.
-        // O altar ocupa ~10-37% da largura e ~18-75% da altura, em qualquer resolução.
         float wFrac = rect.Width  / screenW;
         float hFrac = rect.Height / screenH;
         bool sizeOk   = wFrac is > 0.08f and < 0.42f
@@ -302,7 +266,6 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         FindRewardElements(panel, rows, 0);
         rows = rows.DistinctBy(e => e.Address).ToList();
 
-        // Find Y position of "Bonus Reward" label and exclude rows below it
         var bonusY = FindBonusRewardY(panel, 0);
         if (bonusY > 0)
             rows = rows.Where(r => r.GetClientRectCache.Y < bonusY).ToList();
