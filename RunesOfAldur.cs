@@ -264,8 +264,14 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
 
         var rect = el.GetClientRectCache;
 
-        bool sizeOk   = rect.Width  is > 200 and < 700
-                     && rect.Height is > 200 and < 800;
+        // Limites em FRAÇÃO do ecrã, não pixels absolutos: PoE2 escala a UI com a resolução,
+        // por isso um altar de ~400x600 a 1080p vira ~800x1200 a 4K. Limites fixos em px
+        // (< 700 / < 800) faziam o painel falhar a 4K e o plugin nunca o encontrava.
+        // O altar ocupa ~10-37% da largura e ~18-75% da altura, em qualquer resolução.
+        float wFrac = rect.Width  / screenW;
+        float hFrac = rect.Height / screenH;
+        bool sizeOk   = wFrac is > 0.08f and < 0.42f
+                     && hFrac is > 0.15f and < 0.85f;
         bool leftSide = rect.X < screenW * 0.4f;
         bool notFull  = rect.Width < screenW * 0.9f && rect.Height < screenH * 0.9f;
 
