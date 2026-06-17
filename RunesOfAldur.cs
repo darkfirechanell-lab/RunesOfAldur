@@ -145,7 +145,9 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
             if (!Settings.ShowPriceOnAll.Value && !isBest) continue;
 
             var drawList = ImGuiNET.ImGui.GetBackgroundDrawList();
-            const float scale = 1.4f;
+            // Escala dinâmica: proporcional à largura do ecrã (base 2560). Mantém o tamanho RELATIVO
+            // igual em qualquer resolução — em 1920 o preço deixa de parecer gigante.
+            var scale = Settings.PriceTextScale.Value * (GameController.Window.GetWindowRectangle().Width / 2560f);
             const float padX = 4f;
             const float padY = 2f;
 

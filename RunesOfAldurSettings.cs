@@ -24,6 +24,10 @@ public class RunesOfAldurSettings : ISettings
     [Menu("Divine threshold (divine)", "Show in divine when value >= this many divine")]
     public RangeNode<float> ShowDivineThreshold { get; set; } = new(1.0f, 0.1f, 100f);
 
+    // Tamanho-base do texto do preço (em 2560 de largura). A escala real é proporcional à resolução.
+    [Menu("Price text size", "Base text scale at 2560px width; scales down/up automatically with resolution.")]
+    public RangeNode<float> PriceTextScale { get; set; } = new(1.4f, 0.5f, 3.0f);
+
     // 50% = neutro (preço fica na própria row). Desvios movem TODOS os preços em bloco pelo ecrã.
     [IgnoreMenu]
     public RangeNode<float> PriceXPercent { get; set; } = new(50f, 0f, 100f);
