@@ -217,12 +217,46 @@ public class RunesOfAldur : BaseSettingsPlugin<RunesOfAldurSettings>
         }).ToList();
     }
 
+    // Título do painel da mecânica. Ancorar nele torna a deteção IMUNE à resolução
+    // (a heurística por % do ecrã partia ao mudar de resolução / ligar 2º ecrã).
+    private const string PanelTitle = "Runeshape Combinations";
+
     private ExileCore2.PoEMemory.Element? GetAltarPanel()
     {
         var ui = GameController.Game.IngameState.IngameUi;
+
+        // 1) Deteção por TÍTULO (robusta, independente de resolução).
+        var title = FindByText(ui, PanelTitle, 0);
+        if (title != null)
+        {
+            // Sobe aos pais até apanhar o contentor que tem rows de reward no subtree.
+            var node = title;
+            for (int i = 0; i < 6 && node != null; i++)
+            {
+                if (ContainsRewardText(node)) return node;
+                node = node.Parent;
+            }
+            return title.Parent ?? title;
+        }
+
+        // 2) Fallback: heurística antiga por geometria (caso o título mude numa patch).
         var screenW = GameController.Window.GetWindowRectangle().Width;
         var screenH = GameController.Window.GetWindowRectangle().Height;
         return FindAltarInTree(ui, screenW, screenH, 0);
+    }
+
+    private static ExileCore2.PoEMemory.Element? FindByText(
+        ExileCore2.PoEMemory.Element el, string text, int depth)
+    {
+        if (depth > 14 || !el.IsVisible) return null;
+        if (string.Equals(el.Text?.Trim(), text, StringComparison.OrdinalIgnoreCase))
+            return el;
+        foreach (var child in el.Children)
+        {
+            var found = FindByText(child, text, depth + 1);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private static ExileCore2.PoEMemory.Element? FindAltarInTree(
